@@ -1,5 +1,5 @@
-//! `coarse-prof` allows you to hierarchically measure the time taken by blocks
-//! in your program take, enabling you to get an intuition of where most time is
+//! `coarse-prof` allows you to hierarchically measure the time that blocks in
+//! your program take, enabling you to get an intuition of where most time is
 //! spent. This can be useful for game development, where you have a bunch of
 //! things that need to run in every frame, such as physics, rendering,
 //! networking and so on, and you may wish to identify the hot spots, so that
@@ -20,13 +20,6 @@
 //!
 //! use coarse_prof::profile;
 //!
-//! fn net() {
-//!     profile!("net");
-//!     
-//!     // Do something...
-//!     sleep(Duration::from_millis(1));
-//! }
-//!
 //! fn render() {
 //!     profile!("render");
 //!
@@ -37,10 +30,8 @@
 //! // Our game's main loop
 //! let num_frames = 100;
 //! for i in 0..num_frames {
-//!     {
-//!         profile!("net");
-//!     }
-//!     
+//!     profile!("frame");
+//!
 //!     // Physics don't run every frame
 //!     if i % 10 == 0 {
 //!         profile!("physics");
@@ -48,9 +39,6 @@
 //!         
 //!         {
 //!             profile!("collisions");
-//!             sleep(Duration::from_millis(1));
-//!
-//!             profile!("resolution");
 //!             sleep(Duration::from_millis(1));
 //!         }
 //!     }
@@ -60,7 +48,14 @@
 //!
 //! // Print the profiling results.
 //! coarse_prof::print(&mut std::io::stdout());
-//! assert!(false);
+//! ```
+//!
+//! Example output:
+//! ```text
+//! frame: 100.00%, 10.40ms/call @ 96.17Hz
+//!   physics: 3.04%, 3.16ms/call @ 9.62Hz
+//!     collisions: 33.85%, 1.07ms/call @ 9.62Hz
+//!   render: 96.84%, 10.07ms/call @ 96.17Hz
 //! ```
 
 use std::cell::RefCell;
@@ -73,12 +68,6 @@ thread_local!(
     /// Global thread-local instance of the profiler.
     pub static PROFILER: RefCell<Profiler> = RefCell::new(Profiler::new())
 );
-
-/// This function must be called once at the start of each frame. The
-/// resulting `Guard` must be kept alive until the end of the frame.
-pub fn start_frame() -> Guard {
-    PROFILER.with(|p| p.borrow_mut().start_frame())
-}
 
 /// Print profiling scope tree.
 pub fn print<W: std::io::Write>(out: &mut W) {
@@ -124,12 +113,13 @@ macro_rules! profile {
 
 /// Internal representation of scopes as a tree.
 struct Scope {
+    /// Name of the scope.
     name: &'static str,
 
-    /// Parent scope in the tree. The root tree has no parent.
+    /// Parent scope in the tree. Root scopes have no parent.
     pred: Option<Rc<RefCell<Scope>>>,
 
-    /// Child scope in the tree.
+    /// Child scopes in the tree.
     succs: Vec<Rc<RefCell<Scope>>>,
 
     /// How often has this scope been visited?
@@ -137,9 +127,6 @@ struct Scope {
 
     /// In total, how much time has been spent in this scope?
     duration_sum: Duration,
-
-    /// At which time was this scope last entered?
-    start_instant: Option<Instant>,
 }
 
 impl Scope {
@@ -149,7 +136,6 @@ impl Scope {
             pred,
             succs: Vec::new(),
             num_calls: 0,
-            start_instant: None,
             duration_sum: Duration::new(0, 0),
         }
     }
@@ -158,20 +144,26 @@ impl Scope {
     /// when leaving the scope.
     fn enter(&mut self) -> Guard {
         self.num_calls += 1;
-        self.start_instant = Some(Instant::now());
-        Guard
+        Guard::enter()
     }
 
-    /// Leave this scope. Usually called automatically by the `Guard` instance.
-    fn leave(&mut self) {
-        self.duration_sum = self
-            .duration_sum
-            .checked_add(self.start_instant.unwrap().elapsed())
-            .unwrap();
+    /// Leave this scope. Called automatically by the `Guard` instance.
+    fn leave(&mut self, duration: Duration) {
+        let duration_sum = self.duration_sum.checked_add(duration);
+
+        // Even though this is extremely unlikely, let's not panic on overflow.
+        self.duration_sum = duration_sum.unwrap_or(Duration::from_millis(0));
     }
 
-    fn print_rec<W: std::io::Write>(&self, out: &mut W, root_duration_sum_secs: f64, depth: usize) {
+    fn print_recursive<W: std::io::Write>(
+        &self,
+        out: &mut W,
+        total_duration: Duration,
+        depth: usize,
+    ) {
+        let total_duration_secs = total_duration.as_fractional_secs();
         let duration_sum_secs = self.duration_sum.as_fractional_secs();
+
         let percent = self
             .pred
             .clone()
@@ -185,67 +177,58 @@ impl Scope {
         }
         writeln!(
             out,
-            "{}: {:3.2}% {:>4.2}ms/call @ {:.2}Hz",
+            "{}: {:3.2}%, {:>4.2}ms/call @ {:.2}Hz",
             self.name,
             percent,
             duration_sum_secs * 1000.0 / (self.num_calls as f64),
-            self.num_calls as f64 / root_duration_sum_secs,
+            self.num_calls as f64 / total_duration_secs,
         )
         .unwrap();
 
         // Write children
         for succ in &self.succs {
             succ.borrow()
-                .print_rec(out, root_duration_sum_secs, depth + 1);
+                .print_recursive(out, total_duration, depth + 1);
         }
     }
 }
 
-pub struct Guard;
+/// A guard that is created when entering a scope and dropped when leaving it.
+pub struct Guard {
+    enter_time: Instant,
+}
+
+impl Guard {
+    fn enter() -> Self {
+        Self {
+            enter_time: Instant::now(),
+        }
+    }
+}
 
 impl Drop for Guard {
     fn drop(&mut self) {
-        PROFILER.with(|p| p.borrow_mut().leave());
+        let duration = self.enter_time.elapsed();
+        PROFILER.with(|p| p.borrow_mut().leave(duration));
     }
 }
 
 /// A `Profiler` stores the scope tree and keeps track of the currently active
 /// scope.
 ///
-/// A `Profiler` has exactly one root scope, which must be maintained by
-/// calling `Profiler::start_frame` at the start of each frame and dropping
-/// the resulting `Guard` only at the end of the frame.
-///
 /// Note that there is a global instance of `Profiler` in `PROFILER`, so it is
 /// not possible to manually create an instance of `Profiler`.
 pub struct Profiler {
-    root: Rc<RefCell<Scope>>,
-    current: Rc<RefCell<Scope>>,
+    roots: Vec<Rc<RefCell<Scope>>>,
+    current: Option<Rc<RefCell<Scope>>>,
 }
 
 impl Profiler {
     fn new() -> Profiler {
-        let root = Rc::new(RefCell::new(Scope::new("root", None)));
-
         Profiler {
-            root: root.clone(),
-            current: root,
+            roots: Vec::new(),
+            current: None,
         }
-    }
-
-    /// This method must be called once at the start of each frame. The
-    /// resulting `Guard` must be kept alive until the end of the frame.
-    fn start_frame(&mut self) -> Guard {
-        assert!(
-            self.current.borrow().pred.is_none(),
-            "should start frame at root profiling node"
-        );
-
-        // This enables easily resetting profiling data in `reset`.
-        self.current = self.root.clone();
-
-        let mut current = self.current.borrow_mut();
-        current.enter()
     }
 
     /// Enter a scope. Returns a `Guard` that should be dropped upon leaving
@@ -254,50 +237,88 @@ impl Profiler {
     /// Usually, this method will be called by the `profile!` macro, so it does
     /// not need to be used directly.
     pub fn enter(&mut self, name: &'static str) -> Guard {
-        // Does the current scope already have `name` as a successor?
-        let existing_succ = {
-            let current = self.current.borrow();
-
-            current
+        // Check if we have already registered `name` at the current point in
+        // the tree.
+        let succ = if let Some(current) = self.current.as_ref() {
+            // We are currently in some scope.
+            let existing_succ = current
+                .borrow()
                 .succs
                 .iter()
                 .find(|succ| succ.borrow().name == name)
-                .cloned()
-        };
+                .cloned();
 
-        let succ = if let Some(existing_succ) = existing_succ {
-            existing_succ
+            existing_succ.unwrap_or_else(|| {
+                // Add new successor node to the current node.
+                let new_scope = Scope::new(name, Some(current.clone()));
+                let succ = Rc::new(RefCell::new(new_scope));
+
+                current.borrow_mut().succs.push(succ.clone());
+
+                succ
+            })
         } else {
-            // Add new successor to current scope.
-            let succ = Rc::new(RefCell::new(Scope::new(name, Some(self.current.clone()))));
-            self.current.borrow_mut().succs.push(succ.clone());
-            succ
+            // We are currently not within any scope. Check if `name` already
+            // is a root.
+            let existing_root = self
+                .roots
+                .iter()
+                .find(|root| root.borrow().name == name)
+                .cloned();
+
+            existing_root.unwrap_or_else(|| {
+                // Add a new root node.
+                let new_scope = Scope::new(name, None);
+                let succ = Rc::new(RefCell::new(new_scope));
+
+                self.roots.push(succ.clone());
+
+                succ
+            })
         };
 
-        self.current = succ;
-        self.current.borrow_mut().enter()
+        let guard = succ.borrow_mut().enter();
+
+        self.current = Some(succ);
+
+        guard
     }
 
     /// Completely reset profiling data.
-    pub fn reset(&mut self) {
-        self.root = Rc::new(RefCell::new(Scope::new("root", None)));
+    fn reset(&mut self) {
+        self.roots.clear();
+
+        // Note that we could now still be anywhere in the previous profiling
+        // tree, so we can not simply reset `self.current`. However, as the
+        // frame comes to an end we will eventually leave a root node, at which
+        // point `self.current` will be set to `None`.
     }
 
     /// Leave the current scope.
-    fn leave(&mut self) {
-        self.current.borrow_mut().leave();
+    fn leave(&mut self, duration: Duration) {
+        self.current = if let Some(current) = self.current.as_ref() {
+            current.borrow_mut().leave(duration);
 
-        // Set current scope back to the parent node.
-        if self.current.borrow().pred.is_some() {
-            let pred = self.current.borrow().pred.clone().unwrap();
-            self.current = pred;
-        }
+            // Set current scope back to the parent node (if any).
+            current.borrow().pred.as_ref().map(|pred| pred.clone())
+        } else {
+            // This should not happen with proper usage.
+            log::error!("Called coarse_prof::leave() while not in any scope");
+
+            None
+        };
     }
 
     fn print<W: std::io::Write>(&self, out: &mut W) {
-        let root_duration_sum_secs = self.root.borrow().duration_sum.as_fractional_secs();
+        let total_duration = self
+            .roots
+            .iter()
+            .map(|root| root.borrow().duration_sum)
+            .sum();
 
-        self.root.borrow().print_rec(out, root_duration_sum_secs, 0);
+        for root in self.roots.iter() {
+            root.borrow().print_recursive(out, total_duration, 0);
+        }
 
         out.flush().unwrap();
     }
