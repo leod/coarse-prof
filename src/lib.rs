@@ -340,3 +340,27 @@ impl Profiler {
         out.flush().unwrap();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_reset_during_frame() {
+        super::reset();
+
+        for i in 0..=5 {
+            profile!("a");
+            profile!("b");
+            {
+                profile!("c");
+                if i == 5 {
+                    super::reset();
+                }
+
+                profile!("d");
+            }
+        }
+
+        assert!(super::PROFILER.with(|p| p.borrow().roots.is_empty()));
+        assert!(super::PROFILER.with(|p| p.borrow().current.is_none()));
+    }
+}
