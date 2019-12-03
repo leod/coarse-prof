@@ -9,8 +9,8 @@
 //! [hprof](https://cmr.github.io/hprof/src/hprof/lib.rs.html).
 //! In contrast to `hprof`, which resets measurements after each frame, this
 //! library tracks averages over multiple frames. Also, `coarse-prof` provides
-//! a macro for profiling a scope, so that users do not have to assign a name
-//! to scope guards.
+//! the macro [`profile`](macro.profile.html) for profiling a scope, so that
+//! users do not have to assign a name to scope guards.
 //!
 //! # Example
 //!
@@ -70,6 +70,21 @@ thread_local!(
 );
 
 /// Print profiling scope tree.
+///
+/// Example output:
+/// ```text
+/// frame: 100.00%, 10.40ms/call @ 96.17Hz
+///   physics: 3.04%, 3.16ms/call @ 9.62Hz
+///     collisions: 33.85%, 1.07ms/call @ 9.62Hz
+///   render: 96.84%, 10.07ms/call @ 96.17Hz
+/// ```
+///
+/// Percentages represent the amount of time taken relative to the parent node.
+///
+/// Frequencies are computed with respect to the total amount of time spent in
+/// root nodes. Thus, if you have multiple root nodes and they do not cover
+/// all code that runs in your program, the printed frequencies will be
+/// overestimated.
 pub fn print<W: std::io::Write>(out: &mut W) {
     PROFILER.with(|p| p.borrow().print(out));
 }
@@ -82,8 +97,8 @@ pub fn reset() {
 /// Use this macro to add the current scope to profiling. In effect, the time
 /// taken from entering to leaving the scope will be measured.
 ///
-/// Internally, the scope is added as a `Scope` to the global thread-local
-/// `PROFILER`.
+/// Internally, the scope is inserted in the scope tree of the global
+/// thread-local [`PROFILER`](constant.PROFILER.html).
 ///
 /// # Example
 ///
@@ -216,8 +231,9 @@ impl Drop for Guard {
 /// A `Profiler` stores the scope tree and keeps track of the currently active
 /// scope.
 ///
-/// Note that there is a global instance of `Profiler` in `PROFILER`, so it is
-/// not possible to manually create an instance of `Profiler`.
+/// Note that there is a global thread-local instance of `Profiler` in
+/// [`PROFILER`](constant.PROFILER.html), so it is not possible to manually
+/// create an instance of `Profiler`.
 pub struct Profiler {
     roots: Vec<Rc<RefCell<Scope>>>,
     current: Option<Rc<RefCell<Scope>>>,
@@ -231,11 +247,12 @@ impl Profiler {
         }
     }
 
-    /// Enter a scope. Returns a `Guard` that should be dropped upon leaving
-    /// the scope.
+    /// Enter a scope. Returns a [`Guard`](struct.Guard.html) that should be
+    /// dropped upon leaving the scope.
     ///
-    /// Usually, this method will be called by the `profile!` macro, so it does
-    /// not need to be used directly.
+    /// Usually, this method will be called by the
+    /// [`profile`](macro.profile.html) macro, so it does not need to be used
+    /// directly.
     pub fn enter(&mut self, name: &'static str) -> Guard {
         // Check if we have already registered `name` at the current point in
         // the tree.
@@ -300,7 +317,7 @@ impl Profiler {
             current.borrow_mut().leave(duration);
 
             // Set current scope back to the parent node (if any).
-            current.borrow().pred.as_ref().map(|pred| pred.clone())
+            current.borrow().pred.as_ref().cloned()
         } else {
             // This should not happen with proper usage.
             log::error!("Called coarse_prof::leave() while not in any scope");
