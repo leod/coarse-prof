@@ -3,6 +3,12 @@ name = "coarse-prof"
 version = "0.1.0"
 authors = ["leod <subtle.frustration@proton.me>"]
 edition = "2018"
+description = "Coarse hierarchical profiling"
+homepage = "https://github.com/leod/coarse-prof"
+documentation = "https://docs.rs/coarse-prof"
+repository = "https://github.com/leod/coarse-prof"
+keywords = ["profiling", "instrumentation"]
+readme = "README.md"
 
 [dependencies]
 floating-duration = "0.1"
