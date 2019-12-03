@@ -47,7 +47,7 @@
 //! }
 //!
 //! // Print the profiling results.
-//! coarse_prof::print(&mut std::io::stdout());
+//! coarse_prof::write(&mut std::io::stdout()).unwrap();
 //! ```
 //!
 //! Example output:
@@ -61,6 +61,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
+use std::io;
 
 use floating_duration::TimeAsFloat;
 
@@ -85,8 +86,8 @@ thread_local!(
 /// root nodes. Thus, if you have multiple root nodes and they do not cover
 /// all code that runs in your program, the printed frequencies will be
 /// overestimated.
-pub fn print<W: std::io::Write>(out: &mut W) {
-    PROFILER.with(|p| p.borrow().print(out));
+pub fn write<W: io::Write>(out: &mut W) -> io::Result<()> {
+    PROFILER.with(|p| p.borrow().write(out))
 }
 
 /// Reset profiling information.
@@ -170,12 +171,12 @@ impl Scope {
         self.duration_sum = duration_sum.unwrap_or(Duration::from_millis(0));
     }
 
-    fn print_recursive<W: std::io::Write>(
+    fn write_recursive<W: io::Write>(
         &self,
         out: &mut W,
         total_duration: Duration,
         depth: usize,
-    ) {
+    ) -> io::Result<()> {
         let total_duration_secs = total_duration.as_fractional_secs();
         let duration_sum_secs = self.duration_sum.as_fractional_secs();
 
@@ -188,7 +189,7 @@ impl Scope {
 
         // Write self
         for _ in 0..depth {
-            write!(out, "  ").unwrap();
+            write!(out, "  ")?;
         }
         writeln!(
             out,
@@ -197,14 +198,15 @@ impl Scope {
             percent,
             duration_sum_secs * 1000.0 / (self.num_calls as f64),
             self.num_calls as f64 / total_duration_secs,
-        )
-        .unwrap();
+        )?;
 
         // Write children
         for succ in &self.succs {
             succ.borrow()
-                .print_recursive(out, total_duration, depth + 1);
+                .write_recursive(out, total_duration, depth + 1)?;
         }
+
+        Ok(())
     }
 }
 
@@ -326,7 +328,7 @@ impl Profiler {
         };
     }
 
-    fn print<W: std::io::Write>(&self, out: &mut W) {
+    fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
         let total_duration = self
             .roots
             .iter()
@@ -334,10 +336,10 @@ impl Profiler {
             .sum();
 
         for root in self.roots.iter() {
-            root.borrow().print_recursive(out, total_duration, 0);
+            root.borrow().write_recursive(out, total_duration, 0)?;
         }
 
-        out.flush().unwrap();
+        out.flush()
     }
 }
 
