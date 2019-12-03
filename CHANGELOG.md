@@ -1,4 +1,7 @@
 # Changelog
+## Version 0.2.2 (2019-12-3)
+- Update readme 
+
 ## Version 0.2.1 (2019-12-3)
 - Fix readme 
 
