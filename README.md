@@ -20,7 +20,7 @@ name to scope guards.
 ## Usage
 Just add this line to your dependencies in `Cargo.toml`:
 ```
-coarse-prof = "0.1"
+coarse-prof = "0.2"
 ```
 
 ## Example
