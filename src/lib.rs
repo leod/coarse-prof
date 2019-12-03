@@ -6,7 +6,7 @@
 //! you know whether and what to optimize.
 //!
 //! `coarse-prof`'s implementation has been inspired by
-//! [hprof](https://cmr.github.io/hprof/src/hprof/lib.rs.html).
+//! [hprof](https://github.com/cmr/hprof).
 //! In contrast to `hprof`, which resets measurements after each frame, this
 //! library tracks averages over multiple frames. Also, `coarse-prof` provides
 //! the macro [`profile`](macro.profile.html) for profiling a scope, so that
