@@ -1,5 +1,67 @@
-// This module's implementation has been inspired by hprof:
-// <https://cmr.github.io/hprof/src/hprof/lib.rs.html>
+//! `coarse-prof` allows you to hierarchically measure the time taken by blocks
+//! in your program take, enabling you to get an intuition of where most time is
+//! spent. This can be useful for game development, where you have a bunch of
+//! things that need to run in every frame, such as physics, rendering,
+//! networking and so on, and you may wish to identify the hot spots, so that
+//! you know whether and what to optimize.
+//!
+//! `coarse-prof`'s implementation has been inspired by
+//! [hprof](https://cmr.github.io/hprof/src/hprof/lib.rs.html).
+//! In contrast to `hprof`, which resets measurements after each frame, this
+//! library tracks averages over multiple frames. Also, `coarse-prof` provides
+//! a macro for profiling a scope, so that users do not have to assign a name
+//! to scope guards.
+//!
+//! # Example
+//!
+//! ```
+//! use std::thread::sleep;
+//! use std::time::Duration;
+//!
+//! use coarse_prof::profile;
+//!
+//! fn net() {
+//!     profile!("net");
+//!     
+//!     // Do something...
+//!     sleep(Duration::from_millis(1));
+//! }
+//!
+//! fn render() {
+//!     profile!("render");
+//!
+//!     // So slow!
+//!     sleep(Duration::from_millis(10));
+//! }
+//!
+//! // Our game's main loop
+//! let num_frames = 100;
+//! for i in 0..num_frames {
+//!     {
+//!         profile!("net");
+//!     }
+//!     
+//!     // Physics don't run every frame
+//!     if i % 10 == 0 {
+//!         profile!("physics");
+//!         sleep(Duration::from_millis(2));
+//!         
+//!         {
+//!             profile!("collisions");
+//!             sleep(Duration::from_millis(1));
+//!
+//!             profile!("resolution");
+//!             sleep(Duration::from_millis(1));
+//!         }
+//!     }
+//!     
+//!     render();
+//! }
+//!
+//! // Print the profiling results.
+//! coarse_prof::print(&mut std::io::stdout());
+//! assert!(false);
+//! ```
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -36,8 +98,8 @@ pub fn reset() {
 ///
 /// # Example
 ///
-/// The following example will profile the scope "foo", which has the scope
-/// "bar" as a child.
+/// The following example will profile the scope `"foo"`, which has the scope
+/// `"bar"` as a child.
 ///
 /// ```
 /// use coarse_prof::profile;
