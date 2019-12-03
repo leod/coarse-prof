@@ -31,13 +31,17 @@ pub fn reset() {
 /// Use this macro to add the current scope to profiling. In effect, the time
 /// taken from entering to leaving the scope will be measured.
 ///
-/// Internally, the scope is added as a `Scope` to the global `PROFILER`.
+/// Internally, the scope is added as a `Scope` to the global thread-local
+/// `PROFILER`.
 ///
 /// # Example
+///
 /// The following example will profile the scope "foo", which has the scope
 /// "bar" as a child.
 ///
 /// ```
+/// use coarse_prof::profile;
+///
 /// {
 ///     profile!("foo");
 ///
@@ -52,7 +56,7 @@ pub fn reset() {
 #[macro_export]
 macro_rules! profile {
     ($name:expr) => {
-        let _guard = $crate::util::profile::PROFILER.with(|p| p.borrow_mut().enter($name));
+        let _guard = $crate::PROFILER.with(|p| p.borrow_mut().enter($name));
     };
 }
 
