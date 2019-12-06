@@ -191,13 +191,11 @@ impl Scope {
     ) -> io::Result<()> {
         let total_duration_secs = total_duration.as_fractional_secs();
         let duration_sum_secs = self.duration_sum.as_fractional_secs();
+        let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
+            pred.borrow().duration_sum.as_fractional_secs()
+        });
 
-        let percent = self
-            .pred
-            .clone()
-            .map(|pred| duration_sum_secs / pred.borrow().duration_sum.as_fractional_secs())
-            .unwrap_or(1.0)
-            * 100.0;
+        let percent = duration_sum_secs / pred_sum_secs * 100.0;
 
         // Write self
         for _ in 0..depth {
