@@ -59,9 +59,9 @@
 //! ```
 
 use std::cell::RefCell;
+use std::io;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-use std::io;
 
 use floating_duration::TimeAsFloat;
 
@@ -93,6 +93,18 @@ pub fn write<W: io::Write>(out: &mut W) -> io::Result<()> {
 /// Reset profiling information.
 pub fn reset() {
     PROFILER.with(|p| p.borrow_mut().reset());
+}
+
+/// Manually enter a scope.
+///
+/// The returned instance of [`Guard`](struct.Guard.html) should be dropped
+/// when leaving the scope.
+///
+/// Usually, it is more convenient to use the macro
+/// [`profile`](macro.profile.html) for including a scope in profiling, but in
+/// some special cases explicit entering/leaving can make sense.
+pub fn enter(name: &'static str) -> Guard {
+    PROFILER.with(|p| p.borrow_mut().enter(name))
 }
 
 /// Use this macro to add the current scope to profiling. In effect, the time
