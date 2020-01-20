@@ -58,7 +58,7 @@ for i in 0..num_frames {
 }
 
 // Print the profiling results.
-coarse_prof::write(&mut std::io::stdout());
+coarse_prof::write(&mut std::io::stdout()).unwrap();
 ```
 
 Example output:
