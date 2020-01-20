@@ -171,15 +171,15 @@ impl Scope {
     /// Enter this scope. Returns a `Guard` instance that should be dropped
     /// when leaving the scope.
     fn enter(&mut self) -> Guard {
-        self.num_calls += 1;
         Guard::enter()
     }
 
     /// Leave this scope. Called automatically by the `Guard` instance.
     fn leave(&mut self, duration: Duration) {
-        let duration_sum = self.duration_sum.checked_add(duration);
+        self.num_calls += 1;
 
         // Even though this is extremely unlikely, let's not panic on overflow.
+        let duration_sum = self.duration_sum.checked_add(duration);
         self.duration_sum = duration_sum.unwrap_or(Duration::from_millis(0));
     }
 
