@@ -1,4 +1,6 @@
 # Changelog
+## Version 0.2.5
+
 ## Version 0.2.4 (2020-01-20)
 - Fix a bug that caused the frequency of some scopes to be slightly overestimated when printing ([#1](https://github.com/leod/coarse-prof/pull/1))
 
