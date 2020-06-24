@@ -12,5 +12,4 @@ keywords = ["profiling", "instrumentation"]
 readme = "README.md"
 
 [dependencies]
-floating-duration = "0.1"
 log = "0.4"

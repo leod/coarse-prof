@@ -63,8 +63,6 @@ use std::io;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use floating_duration::TimeAsFloat;
-
 thread_local!(
     /// Global thread-local instance of the profiler.
     pub static PROFILER: RefCell<Profiler> = RefCell::new(Profiler::new())
@@ -189,10 +187,10 @@ impl Scope {
         total_duration: Duration,
         depth: usize,
     ) -> io::Result<()> {
-        let total_duration_secs = total_duration.as_fractional_secs();
-        let duration_sum_secs = self.duration_sum.as_fractional_secs();
+        let total_duration_secs = total_duration.as_secs_f64();
+        let duration_sum_secs = self.duration_sum.as_secs_f64();
         let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
-            pred.borrow().duration_sum.as_fractional_secs()
+            pred.borrow().duration_sum.as_secs_f64()
         });
 
         let percent = duration_sum_secs / pred_sum_secs * 100.0;
