@@ -61,7 +61,9 @@
 use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use instant::Instant;
 
 thread_local!(
     /// Global thread-local instance of the profiler.
