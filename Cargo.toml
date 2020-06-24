@@ -13,3 +13,4 @@ readme = "README.md"
 
 [dependencies]
 log = "0.4"
+instant = "0.1"
