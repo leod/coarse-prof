@@ -155,6 +155,12 @@ struct Scope {
 
     /// In total, how much time has been spent in this scope?
     duration_sum: Duration,
+
+    /// Minimal duration spent in this scope.
+    duration_min: Duration,
+
+    /// Maximal duration spent in this scope.
+    duration_max: Duration,
 }
 
 impl Scope {
@@ -165,6 +171,8 @@ impl Scope {
             succs: Vec::new(),
             num_calls: 0,
             duration_sum: Duration::new(0, 0),
+            duration_min: Duration::new(u64::MAX, u32::MIN),
+            duration_max: Duration::new(0, 0),
         }
     }
 
@@ -181,6 +189,9 @@ impl Scope {
         // Even though this is extremely unlikely, let's not panic on overflow.
         let duration_sum = self.duration_sum.checked_add(duration);
         self.duration_sum = duration_sum.unwrap_or(Duration::from_millis(0));
+
+        self.duration_min = self.duration_min.min(duration);
+        self.duration_max = self.duration_max.max(duration);
     }
 
     fn write_recursive<W: io::Write>(
@@ -203,10 +214,12 @@ impl Scope {
         }
         writeln!(
             out,
-            "{}: {:3.2}%, {:>4.2}ms/call @ {:.2}Hz",
+            "{}: {:3.2}%, {:>4.2}ms avg, {:>4.2}ms min, {:>4.2}ms max @ {:.2}Hz",
             self.name,
             percent,
             duration_sum_secs * 1000.0 / (self.num_calls as f64),
+            self.duration_min.as_secs_f64() * 1000.0,
+            self.duration_max.as_secs_f64() * 1000.0,
             self.num_calls as f64 / total_duration_secs,
         )?;
 
