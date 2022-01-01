@@ -1,5 +1,5 @@
 # Changelog
-## Version 0.2.5
+## Version 0.2.5 (2021-01-01)
 - Drop dependency on `floating-duration`, no longer needed
 - Use [instant](https://github.com/sebcrozet/instant) crate for portability to WASM targets
 
