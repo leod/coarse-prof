@@ -262,6 +262,7 @@ impl Drop for Guard {
 pub struct Profiler {
     roots: Vec<Rc<RefCell<Scope>>>,
     current: Option<Rc<RefCell<Scope>>>,
+    start_time: Instant,
 }
 
 impl Profiler {
@@ -269,6 +270,7 @@ impl Profiler {
         Profiler {
             roots: Vec::new(),
             current: None,
+            start_time: Instant::now(),
         }
     }
 
@@ -329,6 +331,7 @@ impl Profiler {
     /// Completely reset profiling data.
     fn reset(&mut self) {
         self.roots.clear();
+        self.start_time = Instant::now();
 
         // Note that we could now still be anywhere in the previous profiling
         // tree, so we can not simply reset `self.current`. However, as the
@@ -352,11 +355,7 @@ impl Profiler {
     }
 
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
-        let total_duration = self
-            .roots
-            .iter()
-            .map(|root| root.borrow().duration_sum)
-            .sum();
+        let total_duration = Instant::now().duration_since(self.start_time);
 
         for root in self.roots.iter() {
             root.borrow().write_recursive(out, total_duration, 0)?;
