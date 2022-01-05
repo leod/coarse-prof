@@ -1,4 +1,10 @@
 # Changelog
+## Unreleased
+- Track scope active status
+- Estimate and print variance
+- Use [`tabular`](https://docs.rs/tabular/latest/tabular) for aligned printing
+- Also print number of calls and last durations
+
 ## Version 0.2.5 (2021-01-01)
 - Drop dependency on `floating-duration`, no longer needed
 - Use [instant](https://github.com/sebcrozet/instant) crate for portability to WASM targets
