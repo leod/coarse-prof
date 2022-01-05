@@ -59,10 +59,7 @@
 //! > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
 //! ```
 
-use std::cell::RefCell;
-use std::io;
-use std::rc::Rc;
-use std::time::Duration;
+use std::{cell::RefCell, io, rc::Rc, time::Duration};
 
 use instant::Instant;
 use tabular::{row, Table};
