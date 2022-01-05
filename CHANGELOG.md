@@ -3,7 +3,7 @@
 - Track scope active status
 - Estimate and print variance
 - Use [`tabular`](https://docs.rs/tabular/latest/tabular) for aligned printing
-- Also print number of calls and last durations
+- Also print self percentage, number of calls, and last duration
 
 ## Version 0.2.5 (2021-01-01)
 - Drop dependency on `floating-duration`, no longer needed

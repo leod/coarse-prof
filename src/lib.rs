@@ -72,7 +72,7 @@ thread_local!(
     pub static PROFILER: RefCell<Profiler> = RefCell::new(Profiler::new())
 );
 
-const INDENT_STR: &'static str = "> ";
+const INDENT_STR: &str = "> ";
 
 /// Print profiling scope tree.
 ///
@@ -233,11 +233,18 @@ impl Scope {
         // num_calls == 0 happens only if this is a new scope that has not been
         // left yet.
         if self.num_calls > 0 {
-            let pred_dur_sum_secs = self.pred.clone().map_or(total_dur.as_secs_f64(), |pred| {
+            let pred_dur_sum_secs = self.pred.as_ref().map_or(total_dur.as_secs_f64(), |pred| {
                 pred.borrow().dur_sum.as_secs_f64()
             });
-
+            let succs_dur_sum_secs = self
+                .succs
+                .iter()
+                .map(|succ| succ.borrow().dur_sum.as_secs_f64())
+                .sum::<f64>();
             let percent = self.dur_sum.as_secs_f64() / pred_dur_sum_secs * 100.0;
+            let self_percent = (self.dur_sum.as_secs_f64() - succs_dur_sum_secs).max(0.0)
+                / self.dur_sum.as_secs_f64()
+                * 100.0;
             let freq_hz =
                 (self.num_calls + self.is_active as usize) as f64 / total_dur.as_secs_f64();
             let mean_secs = self.dur_sum.as_secs_f64() / self.num_calls as f64;
@@ -247,6 +254,7 @@ impl Scope {
             table.add_row(row!(
                 INDENT_STR.repeat(depth) + self.name,
                 INDENT_STR.repeat(depth) + &format!("{:.2}", percent),
+                format!("{:.2}", self_percent),
                 format!("{:e}", self.num_calls),
                 format!("{:.2}", freq_hz),
                 format!("{:.2}", mean_secs * 1000.0),
@@ -388,17 +396,10 @@ impl Profiler {
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
         let total_dur = Instant::now().duration_since(self.start_time);
 
-        let mut table = Table::new("{:<} | {:<} | {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
+        let mut table = Table::new("{:<} | {:<} | {:>} {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
         table.add_row(row!(
-            "",
-            "time [%]",
-            "calls",
-            "freq [Hz]",
-            "mean [ms]",
-            "last [ms]",
-            "min [ms]",
-            "max [ms]",
-            "std [ms]",
+            "", "time[%]", "self[%]", "calls", "f[Hz]", "mean[ms]", "last[ms]", "min[ms]",
+            "max[ms]", "std[ms]",
         ));
 
         for root in self.roots.iter() {
