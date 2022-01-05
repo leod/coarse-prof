@@ -64,11 +64,14 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use instant::Instant;
+use tabular::{row, Table};
 
 thread_local!(
     /// Global thread-local instance of the profiler.
     pub static PROFILER: RefCell<Profiler> = RefCell::new(Profiler::new())
 );
+
+const INDENT_STR: &'static str = "> ";
 
 /// Print profiling scope tree.
 ///
@@ -156,17 +159,23 @@ struct Scope {
     /// How often has this scope been visited?
     num_calls: usize,
 
-    /// In total, how much time has been spent in this scope?
-    duration_sum: Duration,
+    /// Total time spent in this scope.
+    dur_sum: Duration,
 
     /// Time spent in this scope the last time.
-    duration_last: Duration,
+    dur_last: Duration,
 
     /// Minimal duration spent in this scope.
-    duration_min: Duration,
+    dur_min: Duration,
 
     /// Maximal duration spent in this scope.
-    duration_max: Duration,
+    dur_max: Duration,
+
+    /// Running mean.
+    dur_mean_secs: f64,
+
+    /// Running M2 for variance estimation (Welford's online algorithm).
+    dur_m2_secs2: f64,
 }
 
 impl Scope {
@@ -177,10 +186,12 @@ impl Scope {
             succs: Vec::new(),
             is_active: false,
             num_calls: 0,
-            duration_sum: Duration::new(0, 0),
-            duration_last: Duration::new(0, 0),
-            duration_min: Duration::new(u64::MAX, u32::MIN),
-            duration_max: Duration::new(0, 0),
+            dur_sum: Duration::new(0, 0),
+            dur_last: Duration::new(0, 0),
+            dur_min: Duration::new(u64::MAX, u32::MIN),
+            dur_max: Duration::new(0, 0),
+            dur_mean_secs: 0.0,
+            dur_m2_secs2: 0.0,
         }
     }
 
@@ -195,60 +206,59 @@ impl Scope {
     }
 
     /// Leave this scope. Called automatically by the `Guard` instance.
-    fn leave(&mut self, duration: Duration) {
+    fn leave(&mut self, dur_last: Duration) {
         assert!(self.is_active, "Scope was not entered properly");
 
         self.is_active = false;
         self.num_calls += 1;
 
-        // Even though this is extremely unlikely, let's not panic on overflow.
-        let duration_sum = self.duration_sum.checked_add(duration);
-        self.duration_sum = duration_sum.unwrap_or(Duration::from_millis(0));
+        self.dur_sum = self
+            .dur_sum
+            .checked_add(dur_last)
+            .unwrap_or_else(|| Duration::new(0, 0));
+        self.dur_last = dur_last;
+        self.dur_min = self.dur_min.min(dur_last);
+        self.dur_max = self.dur_max.max(dur_last);
 
-        self.duration_min = self.duration_min.min(duration);
-        self.duration_max = self.duration_max.max(duration);
+        // Use Welford's online algorithm for variance estimation.
+        let prev_dur_mean_secs = self.dur_mean_secs;
+        self.dur_mean_secs += (dur_last.as_secs_f64() - self.dur_mean_secs) / self.num_calls as f64;
+        self.dur_m2_secs2 += (dur_last.as_secs_f64() - prev_dur_mean_secs)
+            * (dur_last.as_secs_f64() - self.dur_mean_secs);
     }
 
-    fn write_recursive<W: io::Write>(
-        &self,
-        out: &mut W,
-        total_duration: Duration,
-        depth: usize,
-    ) -> io::Result<()> {
+    fn write_recursive(&self, total_dur: Duration, depth: usize, table: &mut Table) {
         // num_calls == 0 happens only if this is a new scope that has not been
         // left yet.
         if self.num_calls > 0 {
-            let total_duration_secs = total_duration.as_secs_f64();
-            let duration_sum_secs = self.duration_sum.as_secs_f64();
-            let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
-                pred.borrow().duration_sum.as_secs_f64()
+            let pred_dur_sum_secs = self.pred.clone().map_or(total_dur.as_secs_f64(), |pred| {
+                pred.borrow().dur_sum.as_secs_f64()
             });
 
-            let percent = duration_sum_secs / pred_sum_secs * 100.0;
+            let percent = self.dur_sum.as_secs_f64() / pred_dur_sum_secs * 100.0;
+            let freq_hz =
+                (self.num_calls + self.is_active as usize) as f64 / total_dur.as_secs_f64();
+            let mean_secs = self.dur_sum.as_secs_f64() / self.num_calls as f64;
+            let std_secs = (self.dur_m2_secs2 / self.num_calls as f64).sqrt();
 
             // Write self
-            for _ in 0..depth {
-                write!(out, "  ")?;
-            }
-            writeln!(
-                out,
-                "{}: {:3.2}%, {:>4.2}ms avg, {:>4.2}ms min, {:>4.2}ms max @ {:.2}Hz",
-                self.name,
-                percent,
-                duration_sum_secs * 1000.0 / (self.num_calls as f64),
-                self.duration_min.as_secs_f64() * 1000.0,
-                self.duration_max.as_secs_f64() * 1000.0,
-                (self.num_calls + self.is_active as usize) as f64 / total_duration_secs,
-            )?;
+            table.add_row(row!(
+                INDENT_STR.repeat(depth) + self.name,
+                INDENT_STR.repeat(depth) + &format!("{:.2}", percent),
+                format!("{:e}", self.num_calls),
+                format!("{:.2}", freq_hz),
+                format!("{:.2}", mean_secs * 1000.0),
+                format!("{:.2}", self.dur_last.as_secs_f64() * 1000.0),
+                format!("{:.2}", self.dur_min.as_secs_f64() * 1000.0),
+                format!("{:.2}", self.dur_max.as_secs_f64() * 1000.0),
+                format!("{:.2}", std_secs * 1000.0),
+            ));
         }
 
         // Write children
         for succ in &self.succs {
-            succ.borrow()
-                .write_recursive(out, total_duration, depth + 1)?;
+            succ.borrow().write_recursive(total_dur, depth + 1, table);
         }
-
-        Ok(())
     }
 }
 
@@ -374,13 +384,26 @@ impl Profiler {
     }
 
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
-        let total_duration = Instant::now().duration_since(self.start_time);
+        let total_dur = Instant::now().duration_since(self.start_time);
+
+        let mut table = Table::new("{:<} | {:<} | {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
+        table.add_row(row!(
+            "",
+            "time [%]",
+            "calls",
+            "freq [Hz]",
+            "mean [ms]",
+            "last [ms]",
+            "min [ms]",
+            "max [ms]",
+            "std [ms]",
+        ));
 
         for root in self.roots.iter() {
-            root.borrow().write_recursive(out, total_duration, 0)?;
+            root.borrow().write_recursive(total_dur, 0, &mut table);
         }
 
-        out.flush()
+        write!(out, "{}", table)
     }
 }
 
