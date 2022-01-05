@@ -150,11 +150,17 @@ struct Scope {
     /// Child scopes in the tree.
     succs: Vec<Rc<RefCell<Scope>>>,
 
+    /// Is this scope currently being visited?
+    is_active: bool,
+
     /// How often has this scope been visited?
     num_calls: usize,
 
     /// In total, how much time has been spent in this scope?
     duration_sum: Duration,
+
+    /// Time spent in this scope the last time.
+    duration_last: Duration,
 
     /// Minimal duration spent in this scope.
     duration_min: Duration,
@@ -169,8 +175,10 @@ impl Scope {
             name,
             pred,
             succs: Vec::new(),
+            is_active: false,
             num_calls: 0,
             duration_sum: Duration::new(0, 0),
+            duration_last: Duration::new(0, 0),
             duration_min: Duration::new(u64::MAX, u32::MIN),
             duration_max: Duration::new(0, 0),
         }
@@ -179,11 +187,18 @@ impl Scope {
     /// Enter this scope. Returns a `Guard` instance that should be dropped
     /// when leaving the scope.
     fn enter(&mut self) -> Guard {
+        assert!(!self.is_active, "Scope was not left properly");
+
+        self.is_active = true;
+
         Guard::enter()
     }
 
     /// Leave this scope. Called automatically by the `Guard` instance.
     fn leave(&mut self, duration: Duration) {
+        assert!(self.is_active, "Scope was not entered properly");
+
+        self.is_active = false;
         self.num_calls += 1;
 
         // Even though this is extremely unlikely, let's not panic on overflow.
@@ -200,28 +215,32 @@ impl Scope {
         total_duration: Duration,
         depth: usize,
     ) -> io::Result<()> {
-        let total_duration_secs = total_duration.as_secs_f64();
-        let duration_sum_secs = self.duration_sum.as_secs_f64();
-        let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
-            pred.borrow().duration_sum.as_secs_f64()
-        });
+        // num_calls == 0 happens only if this is a new scope that has not been
+        // left yet.
+        if self.num_calls > 0 {
+            let total_duration_secs = total_duration.as_secs_f64();
+            let duration_sum_secs = self.duration_sum.as_secs_f64();
+            let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
+                pred.borrow().duration_sum.as_secs_f64()
+            });
 
-        let percent = duration_sum_secs / pred_sum_secs * 100.0;
+            let percent = duration_sum_secs / pred_sum_secs * 100.0;
 
-        // Write self
-        for _ in 0..depth {
-            write!(out, "  ")?;
+            // Write self
+            for _ in 0..depth {
+                write!(out, "  ")?;
+            }
+            writeln!(
+                out,
+                "{}: {:3.2}%, {:>4.2}ms avg, {:>4.2}ms min, {:>4.2}ms max @ {:.2}Hz",
+                self.name,
+                percent,
+                duration_sum_secs * 1000.0 / (self.num_calls as f64),
+                self.duration_min.as_secs_f64() * 1000.0,
+                self.duration_max.as_secs_f64() * 1000.0,
+                (self.num_calls + self.is_active as usize) as f64 / total_duration_secs,
+            )?;
         }
-        writeln!(
-            out,
-            "{}: {:3.2}%, {:>4.2}ms avg, {:>4.2}ms min, {:>4.2}ms max @ {:.2}Hz",
-            self.name,
-            percent,
-            duration_sum_secs * 1000.0 / (self.num_calls as f64),
-            self.duration_min.as_secs_f64() * 1000.0,
-            self.duration_max.as_secs_f64() * 1000.0,
-            self.num_calls as f64 / total_duration_secs,
-        )?;
 
         // Write children
         for succ in &self.succs {
