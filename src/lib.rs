@@ -52,10 +52,11 @@
 //!
 //! Example output:
 //! ```text
-//! frame: 100.00%, 10.40ms/call @ 96.17Hz
-//!   physics: 3.04%, 3.16ms/call @ 9.62Hz
-//!     collisions: 33.85%, 1.07ms/call @ 9.62Hz
-//!   render: 96.84%, 10.07ms/call @ 96.17Hz
+//!                | time [%]  | calls freq [Hz] | mean [ms] last [ms] min [ms] max [ms] std [ms]
+//! frame          | 99.98     |   1e2     96.35 |     10.38     10.06    10.05    13.19     0.94
+//! > physics      | > 3.00    |   1e1      9.64 |      3.12      3.11     3.11     3.12     0.00
+//! > > collisions | > > 33.87 |   1e1      9.64 |      1.06      1.06     1.05     1.06     0.00
+//! > render       | > 96.96   |   1e2     96.35 |     10.06     10.06    10.04    10.10     0.00
 //! ```
 
 use std::cell::RefCell;
@@ -77,10 +78,11 @@ const INDENT_STR: &'static str = "> ";
 ///
 /// Example output:
 /// ```text
-/// frame: 100.00%, 10.40ms/call @ 96.17Hz
-///   physics: 3.04%, 3.16ms/call @ 9.62Hz
-///     collisions: 33.85%, 1.07ms/call @ 9.62Hz
-///   render: 96.84%, 10.07ms/call @ 96.17Hz
+///                | time [%]  | calls freq [Hz] | mean [ms] last [ms] min [ms] max [ms] std [ms]
+/// frame          | 99.98     |   1e2     96.35 |     10.38     10.06    10.05    13.19     0.94
+/// > physics      | > 3.00    |   1e1      9.64 |      3.12      3.11     3.11     3.12     0.00
+/// > > collisions | > > 33.87 |   1e1      9.64 |      1.06      1.06     1.05     1.06     0.00
+/// > render       | > 96.96   |   1e2     96.35 |     10.06     10.06    10.04    10.10     0.00
 /// ```
 ///
 /// Percentages represent the amount of time taken relative to the parent node.
