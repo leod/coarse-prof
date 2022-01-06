@@ -281,7 +281,7 @@ impl Scope {
                 format!("{:.2}", self.dur_max.as_secs_f64() * 1000.0),
                 format!("{:.2}", std_secs * 1000.0),
                 format!("{:.2}", freq_hz),
-                format!("{:e}", self.num_calls),
+                format!("{:>6.2e}", self.num_calls),
             ));
         }
 
