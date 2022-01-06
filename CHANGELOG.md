@@ -4,6 +4,7 @@
 - Estimate and print variance
 - Use [`tabular`](https://docs.rs/tabular/latest/tabular) for aligned printing
 - Also print global percentage, self percentage, and number of calls
+- Add `to_string` convenience function
 
 ## Version 0.2.5 (2021-01-01)
 - Drop dependency on `floating-duration`, no longer needed
