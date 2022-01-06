@@ -52,11 +52,11 @@
 //!
 //! Example output:
 //! ```text
-//!                | time[%]   | self[%] calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-//! frame          | 99.98     |    0.04   1e2 96.30 |    10.38    10.09   10.06   13.23    0.94
-//! > physics      | > 3.01    |   66.18   1e1  9.63 |     3.12     3.12    3.11    3.14    0.01
-//! > > collisions | > > 33.82 |  100.00   1e1  9.63 |     1.06     1.06    1.05    1.06    0.00
-//! > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
+//!                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
+//! frame          |     99.98    99.98    0.04 |   1e2 96.23 |    10.39    10.09   10.06   13.21    0.93
+//!   physics      |      3.00     3.00   66.15 |   1e1  9.62 |     3.12     3.12    3.11    3.12    0.00
+//!     collisions |      1.02    33.85  100.00 |   1e1  9.62 |     1.05     1.06    1.05    1.06    0.00
+//!   render       |     96.94    96.96  100.00 |   1e2 96.23 |    10.07    10.08   10.06   10.09    0.01
 //! ```
 
 use std::{cell::RefCell, io, rc::Rc, time::Duration};
@@ -69,7 +69,7 @@ thread_local!(
     pub static PROFILER: RefCell<Profiler> = RefCell::new(Profiler::new())
 );
 
-const INDENT_STR: &str = "> ";
+const INDENT_STR: &str = "  ";
 
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,11 +82,11 @@ pub enum ScopeName {
 ///
 /// Example output:
 /// ```text
-///                | time[%]   | self[%] calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-/// frame          | 99.98     |    0.04   1e2 96.30 |    10.38    10.09   10.06   13.23    0.94
-/// > physics      | > 3.01    |   66.18   1e1  9.63 |     3.12     3.12    3.11    3.14    0.01
-/// > > collisions | > > 33.82 |  100.00   1e1  9.63 |     1.06     1.06    1.05    1.06    0.00
-/// > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
+///                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
+/// frame          |     99.98    99.98    0.04 |   1e2 96.23 |    10.39    10.09   10.06   13.21    0.93
+///   physics      |      3.00     3.00   66.15 |   1e1  9.62 |     3.12     3.12    3.11    3.12    0.00
+///     collisions |      1.02    33.85  100.00 |   1e1  9.62 |     1.05     1.06    1.05    1.06    0.00
+///   render       |     96.94    96.96  100.00 |   1e2 96.23 |    10.07    10.08   10.06   10.09    0.01
 /// ```
 ///
 /// Percentages represent the amount of time taken relative to the parent node.
@@ -258,7 +258,8 @@ impl Scope {
                 .iter()
                 .map(|succ| succ.borrow().dur_sum.as_secs_f64())
                 .sum::<f64>();
-            let percent = self.dur_sum.as_secs_f64() / pred_dur_sum_secs * 100.0;
+            let local_percent = self.dur_sum.as_secs_f64() / pred_dur_sum_secs * 100.0;
+            let global_percent = self.dur_sum.as_secs_f64() / total_dur.as_secs_f64() * 100.0;
             let self_percent = (self.dur_sum.as_secs_f64() - succs_dur_sum_secs).max(0.0)
                 / self.dur_sum.as_secs_f64()
                 * 100.0;
@@ -270,7 +271,8 @@ impl Scope {
             // Write self
             table.add_row(row!(
                 INDENT_STR.repeat(depth) + name,
-                INDENT_STR.repeat(depth) + &format!("{:.2}", percent),
+                format!("{:.2}", global_percent),
+                format!("{:.2}", local_percent),
                 format!("{:.2}", self_percent),
                 format!("{:e}", self.num_calls),
                 format!("{:.2}", freq_hz),
@@ -413,10 +415,19 @@ impl Profiler {
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
         let total_dur = Instant::now().duration_since(self.start_time);
 
-        let mut table = Table::new("{:<} | {:<} | {:>} {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
+        let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
         table.add_row(row!(
-            "", "time[%]", "self[%]", "calls", "f[Hz]", "mean[ms]", "last[ms]", "min[ms]",
-            "max[ms]", "std[ms]",
+            "",
+            "global[%]",
+            "local[%]",
+            "self[%]",
+            "calls",
+            "f[Hz]",
+            "mean[ms]",
+            "last[ms]",
+            "min[ms]",
+            "max[ms]",
+            "std[ms]",
         ));
 
         for root in self.roots.iter() {
