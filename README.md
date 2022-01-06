@@ -63,9 +63,9 @@ coarse_prof::write(&mut std::io::stdout()).unwrap();
 
 Example output:
 ```
-               | time[%]   | self[%] calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-frame          | 99.98     |    0.04   1e2 96.30 |    10.38    10.09   10.06   13.23    0.94
-> physics      | > 3.01    |   66.18   1e1  9.63 |     3.12     3.12    3.11    3.14    0.01
-> > collisions | > > 33.82 |  100.00   1e1  9.63 |     1.06     1.06    1.05    1.06    0.00
-> render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
+               | global[%] local[%] self[%] | calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
+frame          |     99.98    99.98    0.04 |   1e2 96.23 |    10.39    10.09   10.06   13.21    0.93
+  physics      |      3.00     3.00   66.15 |   1e1  9.62 |     3.12     3.12    3.11    3.12    0.00
+    collisions |      1.02    33.85  100.00 |   1e1  9.62 |     1.05     1.06    1.05    1.06    0.00
+  render       |     96.94    96.96  100.00 |   1e2 96.23 |    10.07    10.08   10.06   10.09    0.01
 ```
