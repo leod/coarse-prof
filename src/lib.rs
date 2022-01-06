@@ -276,12 +276,12 @@ impl Scope {
                         100.0
                     }
                 ),
-                format!("{:e}", self.num_calls),
-                format!("{:.2}", freq_hz),
                 format!("{:.2}", mean_secs * 1000.0),
                 format!("{:.2}", self.dur_min.as_secs_f64() * 1000.0),
                 format!("{:.2}", self.dur_max.as_secs_f64() * 1000.0),
                 format!("{:.2}", std_secs * 1000.0),
+                format!("{:.2}", freq_hz),
+                format!("{:e}", self.num_calls),
             ));
         }
 
@@ -416,18 +416,18 @@ impl Profiler {
     fn to_string(&self) -> String {
         let total_dur = Instant::now().duration_since(self.start_time);
 
-        let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} | {:>} {:>} {:>} {:>}");
+        let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} {:>} {:>} | {:>} {:>}");
         table.add_row(row!(
             "",
             "global[%]",
             "local[%]",
             "self[%]",
-            "calls",
-            "f[Hz]",
             "mean[ms]",
             "min[ms]",
             "max[ms]",
             "std[ms]",
+            "f[Hz]",
+            "calls",
         ));
 
         for root in self.roots.iter() {
