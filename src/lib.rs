@@ -268,7 +268,7 @@ impl Scope {
                 INDENT_STR.repeat(depth) + name,
                 format!("{:.2}", global_percent),
                 format!("{:.2}", local_percent),
-                format!("{:.2}", self_percent),
+                format!("{:.2}", if self.dur_sum.as_secs_f64() > 0.00000001 { self_percent } else { 100.0 }),
                 format!("{:e}", self.num_calls),
                 format!("{:.2}", freq_hz),
                 format!("{:.2}", mean_secs * 1000.0),
