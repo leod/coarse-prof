@@ -71,6 +71,13 @@ thread_local!(
 
 const INDENT_STR: &str = "> ";
 
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScopeName {
+    Borrowed(&'static str),
+    Owned(String),
+}
+
 /// Print profiling scope tree.
 ///
 /// Example output:
@@ -106,7 +113,7 @@ pub fn reset() {
 /// [`profile`](macro.profile.html) for including a scope in profiling, but in
 /// some special cases explicit entering/leaving can make sense.
 pub fn enter(name: &'static str) -> Guard {
-    PROFILER.with(|p| p.borrow_mut().enter(name))
+    PROFILER.with(|p| p.borrow_mut().enter(ScopeName::Borrowed(name)))
 }
 
 /// Use this macro to add the current scope to profiling. In effect, the time
@@ -137,14 +144,23 @@ pub fn enter(name: &'static str) -> Guard {
 #[macro_export]
 macro_rules! profile {
     ($name:expr) => {
-        let _guard = $crate::PROFILER.with(|p| p.borrow_mut().enter($name));
+        let _guard =
+            $crate::PROFILER.with(|p| p.borrow_mut().enter($crate::ScopeName::Borrowed($name)));
+    };
+}
+
+#[macro_export]
+macro_rules! profile_string_name {
+    ($name:expr) => {
+        let _guard =
+            $crate::PROFILER.with(|p| p.borrow_mut().enter($crate::ScopeName::Owned($name)));
     };
 }
 
 /// Internal representation of scopes as a tree.
 struct Scope {
     /// Name of the scope.
-    name: &'static str,
+    name: ScopeName,
 
     /// Parent scope in the tree. Root scopes have no parent.
     pred: Option<Rc<RefCell<Scope>>>,
@@ -178,7 +194,7 @@ struct Scope {
 }
 
 impl Scope {
-    fn new(name: &'static str, pred: Option<Rc<RefCell<Scope>>>) -> Scope {
+    fn new(name: ScopeName, pred: Option<Rc<RefCell<Scope>>>) -> Scope {
         Scope {
             name,
             pred,
@@ -230,6 +246,10 @@ impl Scope {
         // num_calls == 0 happens only if this is a new scope that has not been
         // left yet.
         if self.num_calls > 0 {
+            let name = match &self.name {
+                ScopeName::Borrowed(s) => s.to_owned(),
+                ScopeName::Owned(s) => s,
+            };
             let pred_dur_sum_secs = self.pred.as_ref().map_or(total_dur.as_secs_f64(), |pred| {
                 pred.borrow().dur_sum.as_secs_f64()
             });
@@ -249,7 +269,7 @@ impl Scope {
 
             // Write self
             table.add_row(row!(
-                INDENT_STR.repeat(depth) + self.name,
+                INDENT_STR.repeat(depth) + name,
                 INDENT_STR.repeat(depth) + &format!("{:.2}", percent),
                 format!("{:.2}", self_percent),
                 format!("{:e}", self.num_calls),
@@ -316,7 +336,7 @@ impl Profiler {
     /// Usually, this method will be called by the
     /// [`profile`](macro.profile.html) macro, so it does not need to be used
     /// directly.
-    pub fn enter(&mut self, name: &'static str) -> Guard {
+    pub fn enter(&mut self, name: ScopeName) -> Guard {
         // Check if we have already registered `name` at the current point in
         // the tree.
         let succ = if let Some(current) = self.current.as_ref() {
@@ -409,6 +429,8 @@ impl Profiler {
 
 #[cfg(test)]
 mod tests {
+    use super::ScopeName;
+
     #[test]
     fn test_multiple_roots() {
         super::reset();
@@ -432,8 +454,8 @@ mod tests {
                 assert!(root.borrow().succs.is_empty());
             }
 
-            assert_eq!(p.roots[0].borrow().name, "b");
-            assert_eq!(p.roots[1].borrow().name, "a");
+            assert_eq!(p.roots[0].borrow().name, ScopeName::Borrowed("b"));
+            assert_eq!(p.roots[1].borrow().name, ScopeName::Borrowed("a"));
 
             assert_eq!(p.roots[0].borrow().num_calls, 6);
             assert_eq!(p.roots[1].borrow().num_calls, 1);
@@ -461,13 +483,13 @@ mod tests {
             assert_eq!(p.roots.len(), 1);
 
             let root = p.roots[0].borrow();
-            assert_eq!(root.name, "a");
+            assert_eq!(root.name, ScopeName::Borrowed("a"));
             assert!(root.pred.is_none());
             assert_eq!(root.succs.len(), 1);
             assert_eq!(root.num_calls, 6);
 
             let succ = root.succs[0].borrow();
-            assert_eq!(succ.name, "b");
+            assert_eq!(succ.name, ScopeName::Borrowed("b"));
             assert!(ptr::eq(
                 succ.pred.as_ref().unwrap().as_ref(),
                 p.roots[0].as_ref()
