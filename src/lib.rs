@@ -71,30 +71,11 @@ thread_local!(
 
 const INDENT_STR: &str = "> ";
 
-/// Print profiling scope tree.
-///
-/// Example output:
-/// ```text
-///                | time[%]   | self[%] calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-/// frame          | 99.98     |    0.04   1e2 96.30 |    10.38    10.09   10.06   13.23    0.94
-/// > physics      | > 3.01    |   66.18   1e1  9.63 |     3.12     3.12    3.11    3.14    0.01
-/// > > collisions | > > 33.82 |  100.00   1e1  9.63 |     1.06     1.06    1.05    1.06    0.00
-/// > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
-/// ```
-///
-/// Percentages represent the amount of time taken relative to the parent node.
-///
-/// Frequencies are computed with respect to the total amount of time spent in
-/// root nodes. Thus, if you have multiple root nodes and they do not cover
-/// all code that runs in your program, the printed frequencies will be
-/// overestimated.
-pub fn write<W: io::Write>(out: &mut W) -> io::Result<()> {
-    PROFILER.with(|p| p.borrow().write(out))
-}
-
-/// Reset profiling information.
-pub fn reset() {
-    PROFILER.with(|p| p.borrow_mut().reset());
+#[doc(hidden)]
+#[derive(PartialEq, Eq)]
+pub enum ScopeId {
+    TypeId(TypeId),
+    StaticStr(&'static str),
 }
 
 /// Manually enter a scope.
@@ -110,6 +91,25 @@ pub fn enter(name: &'static str) -> Guard {
         p.borrow_mut()
             .enter(ScopeId::StaticStr(name), || name.to_owned())
     })
+}
+
+/// Print profiling scope tree.
+///
+/// Example output:
+/// ```text
+///                | time[%]   | self[%] calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
+/// frame          | 99.98     |    0.04   1e2 96.30 |    10.38    10.09   10.06   13.23    0.94
+/// > physics      | > 3.01    |   66.18   1e1  9.63 |     3.12     3.12    3.11    3.14    0.01
+/// > > collisions | > > 33.82 |  100.00   1e1  9.63 |     1.06     1.06    1.05    1.06    0.00
+/// > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
+/// ```
+pub fn write<W: io::Write>(out: &mut W) -> io::Result<()> {
+    PROFILER.with(|p| p.borrow().write(out))
+}
+
+/// Reset profiling information.
+pub fn reset() {
+    PROFILER.with(|p| p.borrow_mut().reset());
 }
 
 /// Use this macro to add the current scope to profiling. In effect, the time
@@ -150,12 +150,6 @@ macro_rules! profile {
             )
         });
     };
-}
-
-#[derive(PartialEq, Eq)]
-pub enum ScopeId {
-    TypeId(TypeId),
-    StaticStr(&'static str),
 }
 
 /// Internal representation of scopes as a tree.
@@ -337,6 +331,7 @@ impl Profiler {
     /// Usually, this method will be called by the
     /// [`profile`](macro.profile.html) macro, so it does not need to be used
     /// directly.
+    #[doc(hidden)]
     pub fn enter<F>(&mut self, id: ScopeId, lazy_name: F) -> Guard
     where
         F: FnOnce() -> String,
