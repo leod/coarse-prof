@@ -59,7 +59,7 @@
 //! > render       | > 96.95   |  100.00   1e2 96.30 |    10.07    10.08   10.05   10.08    0.01
 //! ```
 
-use std::{cell::RefCell, io, rc::Rc, time::Duration};
+use std::{any::TypeId, cell::RefCell, io, rc::Rc, time::Duration};
 
 use instant::Instant;
 use tabular::{row, Table};
@@ -106,7 +106,10 @@ pub fn reset() {
 /// [`profile`](macro.profile.html) for including a scope in profiling, but in
 /// some special cases explicit entering/leaving can make sense.
 pub fn enter(name: &'static str) -> Guard {
-    PROFILER.with(|p| p.borrow_mut().enter(name))
+    PROFILER.with(|p| {
+        p.borrow_mut()
+            .enter(ScopeId::StaticStr(name), || name.to_owned())
+    })
 }
 
 /// Use this macro to add the current scope to profiling. In effect, the time
@@ -137,14 +140,31 @@ pub fn enter(name: &'static str) -> Guard {
 #[macro_export]
 macro_rules! profile {
     ($name:expr) => {
-        let _guard = $crate::PROFILER.with(|p| p.borrow_mut().enter($name));
+        let _guard = $crate::PROFILER.with(|p| {
+            p.borrow_mut().enter(
+                {
+                    struct UniqueType;
+                    $crate::ScopeId::TypeId(std::any::TypeId::of::<UniqueType>())
+                },
+                || $name.into(),
+            )
+        });
     };
+}
+
+#[derive(PartialEq, Eq)]
+pub enum ScopeId {
+    TypeId(TypeId),
+    StaticStr(&'static str),
 }
 
 /// Internal representation of scopes as a tree.
 struct Scope {
-    /// Name of the scope.
-    name: &'static str,
+    /// Unique ID of this scope.
+    id: ScopeId,
+
+    /// Name of this scope. Generated lazily when the scope is first entered.
+    name: String,
 
     /// Parent scope in the tree. Root scopes have no parent.
     pred: Option<Rc<RefCell<Scope>>>,
@@ -178,8 +198,9 @@ struct Scope {
 }
 
 impl Scope {
-    fn new(name: &'static str, pred: Option<Rc<RefCell<Scope>>>) -> Scope {
+    fn new(id: ScopeId, name: String, pred: Option<Rc<RefCell<Scope>>>) -> Scope {
         Scope {
+            id,
             name,
             pred,
             succs: Vec::new(),
@@ -249,7 +270,7 @@ impl Scope {
 
             // Write self
             table.add_row(row!(
-                INDENT_STR.repeat(depth) + self.name,
+                INDENT_STR.repeat(depth) + &self.name,
                 INDENT_STR.repeat(depth) + &format!("{:.2}", percent),
                 format!("{:.2}", self_percent),
                 format!("{:e}", self.num_calls),
@@ -316,45 +337,53 @@ impl Profiler {
     /// Usually, this method will be called by the
     /// [`profile`](macro.profile.html) macro, so it does not need to be used
     /// directly.
-    pub fn enter(&mut self, name: &'static str) -> Guard {
-        // Check if we have already registered `name` at the current point in
-        // the tree.
+    pub fn enter<F>(&mut self, id: ScopeId, lazy_name: F) -> Guard
+    where
+        F: FnOnce() -> String,
+    {
+        // Check if we have already registered this scope at the current point
+        // in the tree.
         let succ = if let Some(current) = self.current.as_ref() {
             // We are currently in some scope.
             let existing_succ = current
                 .borrow()
                 .succs
                 .iter()
-                .find(|succ| succ.borrow().name == name)
+                .find(|succ| succ.borrow().id == id)
                 .cloned();
 
-            existing_succ.unwrap_or_else(|| {
-                // Add new successor node to the current node.
-                let new_scope = Scope::new(name, Some(current.clone()));
-                let succ = Rc::new(RefCell::new(new_scope));
+            match existing_succ {
+                Some(existing_succ) => existing_succ,
+                None => {
+                    // Add new successor node to the current node.
+                    let new_scope = Scope::new(id, lazy_name(), Some(current.clone()));
+                    let succ = Rc::new(RefCell::new(new_scope));
 
-                current.borrow_mut().succs.push(succ.clone());
+                    current.borrow_mut().succs.push(succ.clone());
 
-                succ
-            })
+                    succ
+                }
+            }
         } else {
-            // We are currently not within any scope. Check if `name` already
-            // is a root.
+            // We are currently not within any scope. Check if this scope is already a root.
             let existing_root = self
                 .roots
                 .iter()
-                .find(|root| root.borrow().name == name)
+                .find(|root| root.borrow().id == id)
                 .cloned();
 
-            existing_root.unwrap_or_else(|| {
-                // Add a new root node.
-                let new_scope = Scope::new(name, None);
-                let succ = Rc::new(RefCell::new(new_scope));
+            match existing_root {
+                Some(existing_root) => existing_root,
+                None => {
+                    // Add a new root node.
+                    let new_scope = Scope::new(id, lazy_name(), None);
+                    let succ = Rc::new(RefCell::new(new_scope));
 
-                self.roots.push(succ.clone());
+                    self.roots.push(succ.clone());
 
-                succ
-            })
+                    succ
+                }
+            }
         };
 
         let guard = succ.borrow_mut().enter();
