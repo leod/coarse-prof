@@ -52,11 +52,11 @@
 //!
 //! Example output:
 //! ```text
-//!                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-//! frame          |     99.98    99.98    0.04 |   1e2 96.23 |    10.39    10.09   10.06   13.21    0.93
-//!   physics      |      3.00     3.00   66.15 |   1e1  9.62 |     3.12     3.12    3.11    3.12    0.00
-//!     collisions |      1.02    33.85  100.00 |   1e1  9.62 |     1.05     1.06    1.05    1.06    0.00
-//!   render       |     96.94    96.96  100.00 |   1e2 96.23 |    10.07    10.08   10.06   10.09    0.01
+//!                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] min[ms] max[ms] std[ms]
+//! frame          |     99.98    99.98    0.02 |   1e2 96.37 |    10.37   10.06   13.19    0.94
+//!   physics      |      3.00     3.00   66.13 |   1e1  9.64 |     3.11    3.11    3.12    0.00
+//!     collisions |      1.02    33.87  100.00 |   1e1  9.64 |     1.05    1.05    1.06    0.00
+//!   render       |     96.96    96.98  100.00 |   1e2 96.37 |    10.06   10.05   10.07    0.00
 //! ```
 
 use std::{cell::RefCell, io, rc::Rc, time::Duration};
@@ -82,11 +82,11 @@ pub enum ScopeName {
 ///
 /// Example output:
 /// ```text
-///                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] last[ms] min[ms] max[ms] std[ms]
-/// frame          |     99.98    99.98    0.04 |   1e2 96.23 |    10.39    10.09   10.06   13.21    0.93
-///   physics      |      3.00     3.00   66.15 |   1e1  9.62 |     3.12     3.12    3.11    3.12    0.00
-///     collisions |      1.02    33.85  100.00 |   1e1  9.62 |     1.05     1.06    1.05    1.06    0.00
-///   render       |     96.94    96.96  100.00 |   1e2 96.23 |    10.07    10.08   10.06   10.09    0.01
+///                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] min[ms] max[ms] std[ms]
+/// frame          |     99.98    99.98    0.02 |   1e2 96.37 |    10.37   10.06   13.19    0.94
+///   physics      |      3.00     3.00   66.13 |   1e1  9.64 |     3.11    3.11    3.12    0.00
+///     collisions |      1.02    33.87  100.00 |   1e1  9.64 |     1.05    1.05    1.06    0.00
+///   render       |     96.96    96.98  100.00 |   1e2 96.37 |    10.06   10.05   10.07    0.00
 /// ```
 ///
 /// Percentages represent the amount of time taken relative to the parent node.
@@ -177,9 +177,6 @@ struct Scope {
     /// Total time spent in this scope.
     dur_sum: Duration,
 
-    /// Time spent in this scope the last time.
-    dur_last: Duration,
-
     /// Minimal duration spent in this scope.
     dur_min: Duration,
 
@@ -202,7 +199,6 @@ impl Scope {
             is_active: false,
             num_calls: 0,
             dur_sum: Duration::new(0, 0),
-            dur_last: Duration::new(0, 0),
             dur_min: Duration::new(u64::MAX, u32::MIN),
             dur_max: Duration::new(0, 0),
             dur_mean_secs: 0.0,
@@ -231,7 +227,6 @@ impl Scope {
             .dur_sum
             .checked_add(dur_last)
             .unwrap_or_else(|| Duration::new(0, 0));
-        self.dur_last = dur_last;
         self.dur_min = self.dur_min.min(dur_last);
         self.dur_max = self.dur_max.max(dur_last);
 
@@ -277,7 +272,6 @@ impl Scope {
                 format!("{:e}", self.num_calls),
                 format!("{:.2}", freq_hz),
                 format!("{:.2}", mean_secs * 1000.0),
-                format!("{:.2}", self.dur_last.as_secs_f64() * 1000.0),
                 format!("{:.2}", self.dur_min.as_secs_f64() * 1000.0),
                 format!("{:.2}", self.dur_max.as_secs_f64() * 1000.0),
                 format!("{:.2}", std_secs * 1000.0),
@@ -415,7 +409,7 @@ impl Profiler {
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
         let total_dur = Instant::now().duration_since(self.start_time);
 
-        let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} | {:>} {:>} {:>} {:>} {:>}");
+        let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} | {:>} {:>} {:>} {:>}");
         table.add_row(row!(
             "",
             "global[%]",
@@ -424,7 +418,6 @@ impl Profiler {
             "calls",
             "f[Hz]",
             "mean[ms]",
-            "last[ms]",
             "min[ms]",
             "max[ms]",
             "std[ms]",
