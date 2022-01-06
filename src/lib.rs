@@ -80,7 +80,14 @@ pub enum ScopeName {
 
 /// Print profiling scope tree.
 ///
-/// Example output:
+/// See [`to_string`](fn.to_string.html) for example output.
+pub fn write<W: io::Write>(out: &mut W) -> Result<(), io::Error> {
+    write!(out, "{}", to_string())
+}
+
+/// Get profiling scope tree as a string.
+///
+/// Example result:
 /// ```text
 ///                | global[%] local[%] self[%] | calls f[Hz] | mean[ms] min[ms] max[ms] std[ms]
 /// frame          |     99.98    99.98    0.02 |   1e2 96.37 |    10.37   10.06   13.19    0.94
@@ -88,15 +95,8 @@ pub enum ScopeName {
 ///     collisions |      1.02    33.87  100.00 |   1e1  9.64 |     1.05    1.05    1.06    0.00
 ///   render       |     96.96    96.98  100.00 |   1e2 96.37 |    10.06   10.05   10.07    0.00
 /// ```
-///
-/// Percentages represent the amount of time taken relative to the parent node.
-///
-/// Frequencies are computed with respect to the total amount of time spent in
-/// root nodes. Thus, if you have multiple root nodes and they do not cover
-/// all code that runs in your program, the printed frequencies will be
-/// overestimated.
-pub fn write<W: io::Write>(out: &mut W) -> io::Result<()> {
-    PROFILER.with(|p| p.borrow().write(out))
+pub fn to_string() -> String {
+    PROFILER.with(|p| p.borrow().to_string())
 }
 
 /// Reset profiling information.
@@ -268,7 +268,14 @@ impl Scope {
                 INDENT_STR.repeat(depth) + name,
                 format!("{:.2}", global_percent),
                 format!("{:.2}", local_percent),
-                format!("{:.2}", if self.dur_sum.as_secs_f64() > 0.00000001 { self_percent } else { 100.0 }),
+                format!(
+                    "{:.2}",
+                    if self.dur_sum.as_secs_f64() > 0.00000001 {
+                        self_percent
+                    } else {
+                        100.0
+                    }
+                ),
                 format!("{:e}", self.num_calls),
                 format!("{:.2}", freq_hz),
                 format!("{:.2}", mean_secs * 1000.0),
@@ -406,7 +413,7 @@ impl Profiler {
         };
     }
 
-    fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
+    fn to_string(&self) -> String {
         let total_dur = Instant::now().duration_since(self.start_time);
 
         let mut table = Table::new("{:<} | {:>} {:>} {:>} | {:>} {:>} | {:>} {:>} {:>} {:>}");
@@ -427,7 +434,7 @@ impl Profiler {
             root.borrow().write_recursive(total_dur, 0, &mut table);
         }
 
-        write!(out, "{}", table)
+        format!("{}", table)
     }
 }
 
