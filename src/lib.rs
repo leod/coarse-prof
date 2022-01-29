@@ -322,6 +322,7 @@ pub struct Profiler {
     roots: Vec<Rc<RefCell<Scope>>>,
     current: Option<Rc<RefCell<Scope>>>,
     start_time: Instant,
+    reset: bool,
 }
 
 impl Profiler {
@@ -330,6 +331,7 @@ impl Profiler {
             roots: Vec::new(),
             current: None,
             start_time: Instant::now(),
+            reset: false,
         }
     }
 
@@ -361,8 +363,14 @@ impl Profiler {
                 succ
             })
         } else {
-            // We are currently not within any scope. Check if `name` already
-            // is a root.
+            // We are currently not within any scope.
+            if self.reset {
+                self.roots.clear();
+                self.start_time = Instant::now();
+                self.reset = false;
+            }
+
+            // Create new root node if necessary.
             let existing_root = self
                 .roots
                 .iter()
@@ -389,13 +397,10 @@ impl Profiler {
 
     /// Completely reset profiling data.
     fn reset(&mut self) {
-        self.roots.clear();
-        self.start_time = Instant::now();
-
-        // Note that we could now still be anywhere in the previous profiling
-        // tree, so we can not simply reset `self.current`. However, as the
-        // frame comes to an end we will eventually leave a root node, at which
-        // point `self.current` will be set to `None`.
+        // Note that we could now still be anywhere in the current profiling
+        // tree, so we can not simply reset `self.current`. We postpone the
+        // reset until a new root node is entered.
+        self.reset = true;
     }
 
     /// Leave the current scope.
@@ -527,10 +532,15 @@ mod tests {
             }
         }
 
+        // Enter a root node so that the reset is actually performed.
+        {
+            profile!("foo");
+        }
+
         super::PROFILER.with(|p| {
             let p = p.borrow();
 
-            assert!(p.roots.is_empty());
+            assert!(p.roots.len() == 1);
             assert!(p.current.is_none());
         });
     }
