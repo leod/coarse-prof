@@ -12,6 +12,5 @@ keywords = ["profiling", "instrumentation"]
 readme = "README.md"
 
 [dependencies]
-log = "0.4"
 instant = "0.1"
 tabular = "0.1"

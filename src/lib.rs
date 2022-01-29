@@ -400,17 +400,15 @@ impl Profiler {
 
     /// Leave the current scope.
     fn leave(&mut self, duration: Duration) {
-        self.current = if let Some(current) = self.current.as_ref() {
-            current.borrow_mut().leave(duration);
+        let current = self
+            .current
+            .clone()
+            .expect("Called coarse_prof::leave() while not in any scope");
 
-            // Set current scope back to the parent node (if any).
-            current.borrow().pred.as_ref().cloned()
-        } else {
-            // This should not happen with proper usage.
-            log::error!("Called coarse_prof::leave() while not in any scope");
+        current.borrow_mut().leave(duration);
 
-            None
-        };
+        // Set current scope back to the parent node (if any).
+        self.current = current.borrow().pred.as_ref().cloned();
     }
 
     fn to_string(&self) -> String {
