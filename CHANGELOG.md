@@ -1,4 +1,7 @@
 # Changelog
+## Version 0.2.6 (2023-06-03)
+- Use elapsed time for `total_duration`
+
 ## Version 0.2.5 (2021-01-01)
 - Drop dependency on `floating-duration`, no longer needed
 - Use [instant](https://github.com/sebcrozet/instant) crate for portability to WASM targets
