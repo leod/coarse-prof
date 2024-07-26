@@ -63,7 +63,7 @@ use std::io;
 use std::rc::Rc;
 use std::time::Duration;
 
-use instant::Instant;
+use web_time::Instant;
 
 thread_local!(
     /// Global thread-local instance of the profiler.
