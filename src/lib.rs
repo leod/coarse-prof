@@ -461,4 +461,55 @@ mod tests {
             assert!(p.current.is_none());
         });
     }
+
+    #[test]
+    fn test_reset_frees_scope_tree() {
+        use std::rc::Rc;
+
+        super::reset();
+
+        {
+            profile!("a");
+            profile!("b");
+        }
+
+        let root = super::PROFILER.with(|p| Rc::downgrade(&p.borrow().roots[0]));
+        assert!(root.upgrade().is_some());
+
+        super::reset();
+
+        assert!(root.upgrade().is_none());
+    }
+
+    #[test]
+    fn test_reset_during_frame_frees_scope_tree() {
+        use std::rc::Rc;
+
+        super::reset();
+
+        let root = {
+            profile!("a");
+            profile!("b");
+
+            let root = super::PROFILER.with(|p| Rc::downgrade(&p.borrow().roots[0]));
+            super::reset();
+
+            {
+                profile!("c");
+            }
+
+            assert!(root.upgrade().is_some());
+            assert!(super::PROFILER.with(|p| p.borrow().current.is_some()));
+
+            root
+        };
+
+        assert!(root.upgrade().is_none());
+        super::PROFILER.with(|p| {
+            let p = p.borrow();
+
+            assert!(p.roots.is_empty());
+            assert!(p.current.is_none());
+        });
+    }
 }
