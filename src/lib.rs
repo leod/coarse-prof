@@ -60,7 +60,7 @@
 
 use std::cell::RefCell;
 use std::io;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::Duration;
 
 use instant::Instant;
@@ -145,7 +145,7 @@ struct Scope {
     name: &'static str,
 
     /// Parent scope in the tree. Root scopes have no parent.
-    pred: Option<Rc<RefCell<Scope>>>,
+    pred: Option<Weak<RefCell<Scope>>>,
 
     /// Child scopes in the tree.
     succs: Vec<Rc<RefCell<Scope>>>,
@@ -164,7 +164,7 @@ struct Scope {
 }
 
 impl Scope {
-    fn new(name: &'static str, pred: Option<Rc<RefCell<Scope>>>) -> Scope {
+    fn new(name: &'static str, pred: Option<Weak<RefCell<Scope>>>) -> Scope {
         Scope {
             name,
             pred,
@@ -202,9 +202,13 @@ impl Scope {
     ) -> io::Result<()> {
         let total_duration_secs = total_duration.as_secs_f64();
         let duration_sum_secs = self.duration_sum.as_secs_f64();
-        let pred_sum_secs = self.pred.clone().map_or(total_duration_secs, |pred| {
-            pred.borrow().duration_sum.as_secs_f64()
-        });
+        let pred_sum_secs = self
+            .pred
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .map_or(total_duration_secs, |pred| {
+                pred.borrow().duration_sum.as_secs_f64()
+            });
 
         let percent = duration_sum_secs / pred_sum_secs * 100.0;
 
@@ -261,6 +265,7 @@ impl Drop for Guard {
 /// create an instance of `Profiler`.
 pub struct Profiler {
     roots: Vec<Rc<RefCell<Scope>>>,
+    roots_kept_alive_until_leaving_root: Vec<Rc<RefCell<Scope>>>,
     current: Option<Rc<RefCell<Scope>>>,
     start_time: Instant,
 }
@@ -269,6 +274,7 @@ impl Profiler {
     fn new() -> Profiler {
         Profiler {
             roots: Vec::new(),
+            roots_kept_alive_until_leaving_root: Vec::new(),
             current: None,
             start_time: Instant::now(),
         }
@@ -294,7 +300,7 @@ impl Profiler {
 
             existing_succ.unwrap_or_else(|| {
                 // Add new successor node to the current node.
-                let new_scope = Scope::new(name, Some(current.clone()));
+                let new_scope = Scope::new(name, Some(Rc::downgrade(current)));
                 let succ = Rc::new(RefCell::new(new_scope));
 
                 current.borrow_mut().succs.push(succ.clone());
@@ -330,13 +336,20 @@ impl Profiler {
 
     /// Completely reset profiling data.
     fn reset(&mut self) {
-        self.roots.clear();
-        self.start_time = Instant::now();
+        if self.current.is_some() {
+            // Note that we could now still be anywhere in the previous
+            // profiling tree, so we can not simply reset `self.current`, and
+            // the open guards still need that tree to find their way back to
+            // the root. As the frame comes to an end we will eventually leave
+            // a root node, at which point `self.current` will be set to `None`
+            // and the previous tree is dropped.
+            self.roots_kept_alive_until_leaving_root
+                .append(&mut self.roots);
+        } else {
+            self.roots.clear();
+        }
 
-        // Note that we could now still be anywhere in the previous profiling
-        // tree, so we can not simply reset `self.current`. However, as the
-        // frame comes to an end we will eventually leave a root node, at which
-        // point `self.current` will be set to `None`.
+        self.start_time = Instant::now();
     }
 
     /// Leave the current scope.
@@ -345,13 +358,17 @@ impl Profiler {
             current.borrow_mut().leave(duration);
 
             // Set current scope back to the parent node (if any).
-            current.borrow().pred.as_ref().cloned()
+            current.borrow().pred.as_ref().and_then(Weak::upgrade)
         } else {
             // This should not happen with proper usage.
             log::error!("Called coarse_prof::leave() while not in any scope");
 
             None
         };
+
+        if self.current.is_none() {
+            self.roots_kept_alive_until_leaving_root.clear();
+        }
     }
 
     fn write<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
@@ -401,6 +418,7 @@ mod tests {
     #[test]
     fn test_succ_reuse() {
         use std::ptr;
+        use std::rc::Rc;
 
         super::reset();
 
@@ -427,8 +445,8 @@ mod tests {
             let succ = root.succs[0].borrow();
             assert_eq!(succ.name, "b");
             assert!(ptr::eq(
-                succ.pred.as_ref().unwrap().as_ref(),
-                p.roots[0].as_ref()
+                succ.pred.as_ref().unwrap().as_ptr(),
+                Rc::as_ptr(&p.roots[0])
             ));
             assert!(succ.succs.is_empty());
             assert_eq!(succ.num_calls, 3);
@@ -509,6 +527,7 @@ mod tests {
             let p = p.borrow();
 
             assert!(p.roots.is_empty());
+            assert!(p.roots_kept_alive_until_leaving_root.is_empty());
             assert!(p.current.is_none());
         });
     }
